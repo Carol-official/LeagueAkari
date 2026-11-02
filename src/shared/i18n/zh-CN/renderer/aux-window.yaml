@@ -17,6 +17,10 @@ auxWindow:
     notInPhase: 未处于英雄选择过程中
     rerollFailed: 重随失败 {{reason}}
     swapFailed: 交换失败 {{reason}}
+    performance:
+      winRate: 胜率
+      pickRate: 选取率
+      rank: 排名
     balanceTypes:
       damage-dealt: 造成伤害
       damage-taken: 承受伤害

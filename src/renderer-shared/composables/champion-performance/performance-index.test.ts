@@ -1,0 +1,112 @@
+import type {
+  ChampionDataOverview,
+  ChampionOverviewItem,
+  ChampionPerformance
+} from '@shared/data-adapter/champion-data'
+import { describe, expect, it } from 'vitest'
+
+import {
+  type ChampionPerformanceLookup,
+  resolveChampionPerformanceMode,
+  toChampionPerformanceIndex,
+  toPerformanceBadge
+} from './performance-index'
+
+function performance(patch: Partial<ChampionPerformance> = {}): ChampionPerformance {
+  return {
+    games: null,
+    wins: null,
+    winRate: null,
+    pickRate: null,
+    banRate: null,
+    kda: null,
+    rank: null,
+    rankChange: null,
+    strengthTier: null,
+    averagePlacement: null,
+    firstPlaceRate: null,
+    ...patch
+  }
+}
+
+function champion(
+  championId: number,
+  patch: Partial<ChampionPerformance> = {}
+): ChampionOverviewItem {
+  return {
+    championId,
+    position: 'none',
+    performance: performance(patch),
+    counterChampionIds: []
+  }
+}
+
+function overview(champions: ChampionOverviewItem[]): ChampionDataOverview {
+  return {
+    metadata: { source: 'opgg', mode: 'aram', patch: '16.21', dataDate: null, updatedAt: null },
+    sections: { champions }
+  }
+}
+
+describe('resolveChampionPerformanceMode', () => {
+  it('只在大乱斗类模式下返回对应模式', () => {
+    expect(resolveChampionPerformanceMode('ARAM')).toBe('aram')
+    expect(resolveChampionPerformanceMode('KIWI')).toBe('aram_mayhem')
+    expect(resolveChampionPerformanceMode('CLASSIC')).toBeNull()
+    expect(resolveChampionPerformanceMode(null)).toBeNull()
+  })
+})
+
+describe('toChampionPerformanceIndex', () => {
+  it('按英雄 ID 建立查询表并归一化梯度值', () => {
+    const index = toChampionPerformanceIndex(
+      overview([
+        champion(86, { winRate: 0.510667, pickRate: 0.0626479, rank: 49, strengthTier: 2 }),
+        champion(17, { winRate: 0.53, rank: 1, strengthTier: 'OP' }),
+        champion(4)
+      ])
+    )
+
+    expect(index.get(86)).toMatchObject({ winRate: 0.510667, rank: 49, tier: 2 })
+    expect(index.get(17)).toMatchObject({ winRate: 0.53, tier: 0 })
+    expect(index.get(4)).toMatchObject({ winRate: null, tier: null })
+  })
+
+  it('没有数据时返回空表', () => {
+    expect(toChampionPerformanceIndex(null).size).toBe(0)
+  })
+})
+
+describe('toPerformanceBadge', () => {
+  const lookup = (patch: Partial<ChampionPerformanceLookup> = {}): ChampionPerformanceLookup => ({
+    winRate: null,
+    pickRate: null,
+    rank: null,
+    tier: null,
+    games: null,
+    ...patch
+  })
+
+  it('有胜率时展示胜率并按强弱分档', () => {
+    expect(toPerformanceBadge(lookup({ winRate: 0.545 }))).toEqual({
+      text: '54.5',
+      tone: 'high'
+    })
+    expect(toPerformanceBadge(lookup({ winRate: 0.501 }))).toEqual({
+      text: '50.1',
+      tone: 'neutral'
+    })
+    expect(toPerformanceBadge(lookup({ winRate: 0.461 }))).toEqual({
+      text: '46.1',
+      tone: 'low'
+    })
+  })
+
+  it('没有胜率时退化为梯度或排名', () => {
+    expect(toPerformanceBadge(lookup({ tier: 0 }))).toEqual({ text: 'OP', tone: 'tier' })
+    expect(toPerformanceBadge(lookup({ tier: 3 }))).toEqual({ text: 'T3', tone: 'tier' })
+    expect(toPerformanceBadge(lookup({ rank: 12 }))).toEqual({ text: '#12', tone: 'tier' })
+    expect(toPerformanceBadge(lookup())).toBeNull()
+    expect(toPerformanceBadge(null)).toBeNull()
+  })
+})

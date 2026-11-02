@@ -8,35 +8,24 @@
           :duration="100"
           :delay="300"
           :keep-alive-on-hover="false"
-          :disabled="!hasChampionAdjustment(lcs.champSelect.currentChampion || -1)"
+          :disabled="!hasTooltipContent(lcs.champSelect.currentChampion || -1)"
         >
           <template #trigger>
             <ChampionIcon
               class="size-9 cursor-default rounded-full border border-black/10 dark:border-white/10"
               :class="
                 getChampionImageClass(
-                  championAdjustment(lcs.champSelect.currentChampion || -1)?.overallEffect
+                  championAdjustmentEffect(lcs.champSelect.currentChampion || -1)
                 )
               "
               :champion-id="lcs.champSelect.currentChampion || -1"
             />
           </template>
-          <div class="rounded-xs bg-neutral-100 px-2 py-1 dark:bg-neutral-900">
-            <div
-              class="flex text-[11px] text-neutral-900/60 dark:text-neutral-100/60"
-              v-for="b of championAdjustment(lcs.champSelect.currentChampion || -1)
-                ?.sortedAdjustments"
-              :key="b.type"
-            >
-              <span class="flex-1">{{ b.name }}</span>
-              <span
-                class="min-w-9 text-right whitespace-nowrap"
-                :class="getBalanceValueClass(b.effect)"
-                >{{ b.formattedValue }}</span
-              >
-            </div>
-            <div class="mt-1 text-[10px] text-neutral-700 dark:text-neutral-300">OP.GG</div>
-          </div>
+          <BenchChampionTooltip
+            :champion-id="lcs.champSelect.currentChampion || -1"
+            :performance="performance(lcs.champSelect.currentChampion || -1)"
+            :metadata="metadata"
+          />
         </NTooltip>
 
         <!-- 新版大乱斗将不再有 Reroll 机制 -->
@@ -80,49 +69,47 @@
       <NDivider vertical />
 
       <div class="grid grid-cols-5 gap-1">
-        <NTooltip
-          raw
-          :show-arrow="false"
-          :duration="100"
-          :delay="300"
-          v-for="c of combinedChampions"
-          :key="c.championId"
-          :keep-alive-on-hover="false"
-          :disabled="!hasChampionAdjustment(c.championId)"
-        >
-          <template #trigger>
-            <ChampionIcon
-              class="size-8 cursor-pointer rounded-xs border border-black/10 dark:border-white/10"
-              :class="[
-                getChampionImageClass(championAdjustment(c.championId)?.overallEffect || 'neutral'),
-                {
-                  'cursor-not-allowed grayscale-[0.8]':
-                    !isChampionSwappable(c.championId) || !canUseBench
-                }
-              ]"
-              :champion-id="c.championId"
-              @click="() => handleBenchSwapOrPick(c.championId)"
-              @click.right="handleBenchSwapOrPick(c.championId, false)"
+        <div v-for="item of benchItems" :key="item.championId" class="relative">
+          <NTooltip
+            raw
+            :show-arrow="false"
+            :duration="100"
+            :delay="300"
+            :keep-alive-on-hover="false"
+            :disabled="!hasTooltipContent(item.championId)"
+          >
+            <template #trigger>
+              <ChampionIcon
+                class="size-8 cursor-pointer rounded-xs border border-black/10 dark:border-white/10"
+                :class="[
+                  getChampionImageClass(championAdjustmentEffect(item.championId)),
+                  {
+                    'cursor-not-allowed grayscale-[0.8]':
+                      !isChampionSwappable(item.championId) || !canUseBench
+                  }
+                ]"
+                :champion-id="item.championId"
+                @click="() => handleBenchSwapOrPick(item.championId)"
+                @click.right="handleBenchSwapOrPick(item.championId, false)"
+              />
+            </template>
+            <BenchChampionTooltip
+              :champion-id="item.championId"
+              :performance="item.performance"
+              :metadata="metadata"
             />
-          </template>
-          <div class="rounded-xs bg-neutral-100 px-2 py-1 dark:bg-neutral-900">
-            <div
-              class="flex text-[11px] text-neutral-900/60 dark:text-neutral-100/60"
-              v-for="b of championAdjustment(c.championId)?.sortedAdjustments"
-              :key="b.type"
-            >
-              <span class="flex-1">{{ b.name }}</span>
-              <span
-                class="min-w-9 text-right whitespace-nowrap"
-                :class="getBalanceValueClass(b.effect)"
-                >{{ b.formattedValue }}</span
-              >
-            </div>
-            <div class="mt-1 text-[10px] text-neutral-700 dark:text-neutral-300">OP.GG</div>
-          </div>
-        </NTooltip>
+          </NTooltip>
+
+          <span
+            v-if="item.badge"
+            class="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-xs bg-neutral-950/75 text-center text-[9px] leading-3 font-semibold tabular-nums"
+            :class="badgeToneClass(item.badge.tone)"
+          >
+            {{ item.badge.text }}
+          </span>
+        </div>
         <div
-          v-for="_i of Math.max(10 - combinedChampions.length, 0)"
+          v-for="_i of Math.max(10 - (combinedChampions?.length || 0), 0)"
           class="size-8 rounded-xs border border-black/10 dark:border-white/10"
         />
       </div>
@@ -131,7 +118,13 @@
 </template>
 
 <script setup lang="ts">
+import BenchChampionTooltip from './BenchChampionTooltip.vue'
 import ChampionIcon from '@renderer-shared/components/widgets/ChampionIcon.vue'
+import {
+  type ChampionPerformanceTone,
+  toPerformanceBadge,
+  useChampionPerformance
+} from '@renderer-shared/composables/champion-performance'
 import { useComponentName } from '@renderer-shared/composables/useComponentName'
 import { useAkariResourceProvider } from '@renderer-shared/providers/akari-resource'
 import { useInstance } from '@renderer-shared/shards'
@@ -140,8 +133,7 @@ import { useLeagueClientStore } from '@renderer-shared/shards/league-client/stor
 import { LoggerRenderer } from '@renderer-shared/shards/logger'
 import {
   getOpggAramBalanceAdjustments,
-  getOpggAramBalanceOverallEffect,
-  type OpggAramBalanceAdjustment
+  getOpggAramBalanceOverallEffect
 } from '@shared/data-adapter/opgg-aram-balance'
 import { RefreshOutline as RefreshOutlineIcon, Share as ShareIcon } from '@vicons/ionicons5'
 import { useTranslation } from 'i18next-vue'
@@ -155,6 +147,7 @@ const lcs = useLeagueClientStore()
 const lc = useInstance(LeagueClientRenderer)
 const logger = useInstance(LoggerRenderer)
 const resources = useAkariResourceProvider()
+const { performance, metadata } = useChampionPerformance()
 
 const gameMode = computed(() => {
   if (!lcs.gameflow.session) {
@@ -164,74 +157,40 @@ const gameMode = computed(() => {
   return lcs.gameflow.session.gameData.queue.gameMode
 })
 
-const balanceTypes = computed(() => {
-  return {
-    'damage-dealt': {
-      name: t('auxWindow.championBench.balanceTypes.damage-dealt')
-    },
-    'damage-taken': {
-      name: t('auxWindow.championBench.balanceTypes.damage-taken')
-    },
-    'attack-speed': {
-      name: t('auxWindow.championBench.balanceTypes.attack-speed')
-    },
-    'ability-haste': {
-      name: t('auxWindow.championBench.balanceTypes.ability-haste')
-    },
-    healing: {
-      name: t('auxWindow.championBench.balanceTypes.healing')
-    },
-    tenacity: {
-      name: t('auxWindow.championBench.balanceTypes.tenacity')
-    },
-    shielding: {
-      name: t('auxWindow.championBench.balanceTypes.shielding')
-    },
-    'energy-regen': {
-      name: t('auxWindow.championBench.balanceTypes.energy-regen')
-    },
-    'area-of-effect-damage': {
-      name: t('auxWindow.championBench.balanceTypes.area-of-effect-damage')
-    }
-  }
-})
-
-const formatValue = (item: OpggAramBalanceAdjustment) => {
-  if (item.display === 'percentage') {
-    return `${item.value.toFixed()}%`
-  }
-
-  return `${item.value > 0 ? '+' : ''}${item.value}`
-}
-
-const championAdjustment = (championId: number) => {
+const hasBalanceAdjustment = (championId: number) => {
   if (gameMode.value !== 'ARAM') {
-    return null
+    return false
   }
 
   const balance = resources.champions.aramBalance(championId)
-
   if (!balance) {
-    return null
+    return false
+  }
+
+  return getOpggAramBalanceAdjustments(balance).length > 0
+}
+
+const hasTooltipContent = (championId: number) => {
+  return performance(championId) !== null || hasBalanceAdjustment(championId)
+}
+
+const championAdjustmentEffect = (championId: number) => {
+  if (gameMode.value !== 'ARAM') {
+    return undefined
+  }
+
+  const balance = resources.champions.aramBalance(championId)
+  if (!balance) {
+    return undefined
   }
 
   const adjustments = getOpggAramBalanceAdjustments(balance)
-
   if (!adjustments.length) {
-    return null
+    return undefined
   }
 
-  return {
-    overallEffect: getOpggAramBalanceOverallEffect(adjustments),
-    sortedAdjustments: adjustments.map((item) => ({
-      ...item,
-      name: balanceTypes.value[item.type].name,
-      formattedValue: formatValue(item)
-    }))
-  }
+  return getOpggAramBalanceOverallEffect(adjustments)
 }
-
-const hasChampionAdjustment = (championId: number) => championAdjustment(championId) !== null
 
 // lcux 中按照如下逻辑隐藏 bench. 在隐藏 bench 的时候, 通常也不能继续进行选择
 const canUseBench = computed(() => {
@@ -276,6 +235,23 @@ const combinedChampions = computed(() => {
   }
 
   return originalBenchChampions
+})
+
+const benchItems = computed(() => {
+  const champions = combinedChampions.value
+  if (!champions) {
+    return []
+  }
+
+  return champions.map((champion) => {
+    const item = performance(champion.championId)
+
+    return {
+      championId: champion.championId,
+      performance: item,
+      badge: toPerformanceBadge(item)
+    }
+  })
 })
 
 const rerollsRemaining = computed(() => {
@@ -332,14 +308,16 @@ const getChampionImageClass = (effect?: string) => {
   }
 }
 
-const getBalanceValueClass = (effect?: string) => {
-  switch (effect) {
-    case 'buffed':
-      return 'text-emerald-500 dark:text-emerald-300'
-    case 'nerfed':
-      return 'text-orange-500 dark:text-orange-300'
+const badgeToneClass = (tone: ChampionPerformanceTone) => {
+  switch (tone) {
+    case 'high':
+      return 'text-emerald-300'
+    case 'low':
+      return 'text-orange-300'
+    case 'tier':
+      return 'text-amber-200'
     default:
-      return ''
+      return 'text-white/90'
   }
 }
 

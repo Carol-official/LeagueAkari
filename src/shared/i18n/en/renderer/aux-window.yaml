@@ -17,6 +17,10 @@ auxWindow:
     notInPhase: Not in the champion selection phase
     rerollFailed: Failed to reroll {{reason}}
     swapFailed: Failed to swap {{reason}}
+    performance:
+      winRate: Win Rate
+      pickRate: Pick Rate
+      rank: Rank
     balanceTypes:
       damage-dealt: Damage Dealt
       damage-taken: Damage Taken
