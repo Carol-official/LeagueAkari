@@ -21,9 +21,30 @@ export interface ChampionPerformanceBadge {
   tone: ChampionPerformanceTone
 }
 
-/** 大乱斗胜率普遍在 45% - 55% 之间，因此用 52.5% / 47.5% 作为强弱分界 */
-const HIGH_WIN_RATE = 0.525
-const LOW_WIN_RATE = 0.475
+/**
+ * 大乱斗胜率分布很窄 (中位数约 49.7%，标准差约 3%)，因此用 p25 / p75 作为
+ * 强弱分界：约 1/4 的英雄被标为强势或弱势。
+ */
+const HIGH_WIN_RATE = 0.515
+const LOW_WIN_RATE = 0.478
+
+export function classifyWinRate(
+  winRate: number | null | undefined
+): Exclude<ChampionPerformanceTone, 'tier'> {
+  if (winRate === null || winRate === undefined || !Number.isFinite(winRate)) {
+    return 'neutral'
+  }
+
+  if (winRate >= HIGH_WIN_RATE) {
+    return 'high'
+  }
+
+  if (winRate <= LOW_WIN_RATE) {
+    return 'low'
+  }
+
+  return 'neutral'
+}
 
 export function resolveChampionPerformanceMode(
   gameMode: string | null | undefined
@@ -122,11 +143,7 @@ export function toPerformanceBadge(
 
   const winRateText = formatWinRateCompact(performance.winRate)
   if (winRateText !== null) {
-    const winRate = performance.winRate as number
-    const tone: ChampionPerformanceTone =
-      winRate >= HIGH_WIN_RATE ? 'high' : winRate <= LOW_WIN_RATE ? 'low' : 'neutral'
-
-    return { text: winRateText, tone }
+    return { text: winRateText, tone: classifyWinRate(performance.winRate) }
   }
 
   if (performance.tier !== null) {

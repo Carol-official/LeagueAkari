@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   type ChampionPerformanceLookup,
+  classifyWinRate,
   resolveChampionPerformanceMode,
   toChampionPerformanceIndex,
   toPerformanceBadge
@@ -100,6 +101,14 @@ describe('toPerformanceBadge', () => {
       text: '46.1',
       tone: 'low'
     })
+  })
+
+  it('按 p25 / p75 边界分档', () => {
+    expect(classifyWinRate(0.515)).toBe('high')
+    expect(classifyWinRate(0.5149)).toBe('neutral')
+    expect(classifyWinRate(0.478)).toBe('low')
+    expect(classifyWinRate(0.479)).toBe('neutral')
+    expect(classifyWinRate(null)).toBe('neutral')
   })
 
   it('没有胜率时退化为梯度或排名', () => {

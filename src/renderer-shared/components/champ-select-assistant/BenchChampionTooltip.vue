@@ -42,6 +42,7 @@ import { useLeagueClientStore } from '@renderer-shared/shards/league-client/stor
 import {
   type ChampionPerformanceLookup,
   type ChampionPerformanceMetadata,
+  classifyWinRate,
   formatPickRate,
   formatRank,
   formatWinRate
@@ -116,19 +117,14 @@ const balanceValueClass = (effect?: string) => {
 }
 
 const winRateClass = (winRate: number | null) => {
-  if (winRate === null) {
-    return ''
+  switch (classifyWinRate(winRate)) {
+    case 'high':
+      return 'text-emerald-600 dark:text-emerald-300'
+    case 'low':
+      return 'text-orange-600 dark:text-orange-300'
+    default:
+      return ''
   }
-
-  if (winRate >= 0.525) {
-    return 'text-emerald-600 dark:text-emerald-300'
-  }
-
-  if (winRate <= 0.475) {
-    return 'text-orange-600 dark:text-orange-300'
-  }
-
-  return ''
 }
 
 const performanceRows = computed(() => {
