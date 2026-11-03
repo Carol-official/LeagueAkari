@@ -1,6 +1,14 @@
 <template>
   <div class="rounded-xs bg-neutral-100 px-2 py-1 dark:bg-neutral-900">
     <div
+      v-if="header"
+      class="mb-1 flex items-center gap-2 text-[10px] text-neutral-700 dark:text-neutral-300"
+    >
+      <span class="flex-1 whitespace-nowrap">{{ header }}</span>
+      <span v-if="metadata" class="whitespace-nowrap">{{ sourceLabel }}</span>
+    </div>
+
+    <div
       v-for="row of performanceRows"
       :key="row.key"
       class="flex text-[11px] text-neutral-900/60 dark:text-neutral-100/60"
@@ -9,6 +17,10 @@
       <span class="min-w-9 text-right whitespace-nowrap tabular-nums" :class="row.class">
         {{ row.value }}
       </span>
+    </div>
+
+    <div v-if="tierOnlyNote" class="mt-1 text-[10px] text-neutral-700 dark:text-neutral-300">
+      {{ tierOnlyNote }}
     </div>
 
     <div
@@ -45,7 +57,8 @@ import {
   classifyWinRate,
   formatPickRate,
   formatRank,
-  formatWinRate
+  formatWinRate,
+  resolveChampionPerformanceModeFromSession
 } from '@renderer-shared/composables/champion-performance'
 import {
   getOpggAramBalanceAdjustments,
@@ -166,21 +179,73 @@ const performanceRows = computed(() => {
     })
   }
 
+  const opggRank = formatRank(performance.opggTier, performance.opggRank)
+  if (opggRank) {
+    rows.push({
+      key: 'opgg-rank',
+      label: t('auxWindow.championBench.performance.opggTier'),
+      value: opggRank,
+      class: ''
+    })
+  }
+
   return rows
+})
+
+const performanceMode = computed(() =>
+  resolveChampionPerformanceModeFromSession(lcs.gameflow.session)
+)
+
+const sourceLabel = computed(() => {
+  if (!props.metadata) {
+    return ''
+  }
+
+  const labelOf = (source: string) => (source === 'qq101' ? '101' : 'OP.GG')
+  const labels = [labelOf(props.metadata.source)]
+
+  if (props.metadata.secondarySource) {
+    labels.push(labelOf(props.metadata.secondarySource))
+  }
+
+  return Array.from(new Set(labels)).join(' + ')
+})
+
+const header = computed(() => {
+  if (!props.metadata) {
+    return ''
+  }
+
+  switch (performanceMode.value) {
+    case 'aram_mayhem':
+      return t('auxWindow.championBench.performance.modeMayhem')
+    case 'aram':
+      return t('auxWindow.championBench.performance.modeAram')
+    default:
+      return ''
+  }
+})
+
+const tierOnlyNote = computed(() => {
+  if (performanceMode.value !== 'aram_mayhem') {
+    return ''
+  }
+
+  if (props.performance?.winRate !== null && props.performance?.winRate !== undefined) {
+    return ''
+  }
+
+  return t('auxWindow.championBench.performance.tierOnly')
 })
 
 const footer = computed(() => {
   const labels: string[] = []
 
-  if (props.metadata) {
-    labels.push(props.metadata.source === 'qq101' ? '101' : 'OP.GG')
-
-    if (props.metadata.patch) {
-      labels.push(props.metadata.patch)
-    }
+  if (props.metadata?.patch) {
+    labels.push(props.metadata.patch)
   }
 
-  if (adjustments.value.length) {
+  if (adjustments.value.length && props.metadata?.source !== 'opgg') {
     labels.push('OP.GG')
   }
 

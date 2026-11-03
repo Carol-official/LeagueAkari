@@ -21,6 +21,10 @@ auxWindow:
       winRate: Win Rate
       pickRate: Pick Rate
       rank: Rank
+      opggTier: OP.GG Tier
+      modeAram: ARAM
+      modeMayhem: ARAM Mayhem
+      tierOnly: OP.GG offers no win rate for this mode, tier only
     balanceTypes:
       damage-dealt: Damage Dealt
       damage-taken: Damage Taken

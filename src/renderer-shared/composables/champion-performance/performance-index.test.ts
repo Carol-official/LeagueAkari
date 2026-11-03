@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest'
 import {
   type ChampionPerformanceLookup,
   classifyWinRate,
+  mergeSecondaryTier,
   resolveChampionPerformanceMode,
+  resolveChampionPerformanceModeFromSession,
   toChampionPerformanceIndex,
   toPerformanceBadge
 } from './performance-index'
@@ -58,6 +60,48 @@ describe('resolveChampionPerformanceMode', () => {
   })
 })
 
+describe('resolveChampionPerformanceModeFromSession', () => {
+  it('优先识别海克斯大乱斗', () => {
+    expect(
+      resolveChampionPerformanceModeFromSession({
+        gameData: { queue: { gameMode: 'ARAM' } },
+        map: { gameMode: 'KIWI' }
+      })
+    ).toBe('aram_mayhem')
+
+    expect(
+      resolveChampionPerformanceModeFromSession({
+        gameData: { queue: { gameMode: 'KIWI' } },
+        map: { gameMode: 'ARAM' }
+      })
+    ).toBe('aram_mayhem')
+  })
+
+  it('普通大乱斗与非大乱斗模式', () => {
+    expect(
+      resolveChampionPerformanceModeFromSession({
+        gameData: { queue: { gameMode: 'ARAM' } },
+        map: { gameMode: 'ARAM' }
+      })
+    ).toBe('aram')
+
+    expect(
+      resolveChampionPerformanceModeFromSession({
+        gameData: { queue: { gameMode: 'CLASSIC' } },
+        map: { gameMode: 'CLASSIC' }
+      })
+    ).toBeNull()
+  })
+
+  it('字段缺失时不应崩溃', () => {
+    expect(resolveChampionPerformanceModeFromSession(null)).toBeNull()
+    expect(resolveChampionPerformanceModeFromSession({})).toBeNull()
+    expect(
+      resolveChampionPerformanceModeFromSession({ gameData: null, map: { gameMode: null } })
+    ).toBeNull()
+  })
+})
+
 describe('toChampionPerformanceIndex', () => {
   it('按英雄 ID 建立查询表并归一化梯度值', () => {
     const index = toChampionPerformanceIndex(
@@ -78,6 +122,64 @@ describe('toChampionPerformanceIndex', () => {
   })
 })
 
+describe('mergeSecondaryTier', () => {
+  it('把 OP.GG 的梯度并入 101 的胜率条目', () => {
+    const primary = new Map<number, ChampionPerformanceLookup>([
+      [
+        17,
+        {
+          winRate: 0.5446,
+          pickRate: 0.138,
+          rank: 12,
+          tier: 1,
+          games: null,
+          opggTier: null,
+          opggRank: null
+        }
+      ]
+    ])
+
+    const secondary = new Map<number, ChampionPerformanceLookup>([
+      [
+        17,
+        {
+          winRate: null,
+          pickRate: null,
+          rank: 38,
+          tier: 2,
+          games: null,
+          opggTier: null,
+          opggRank: null
+        }
+      ],
+      [
+        99,
+        {
+          winRate: null,
+          pickRate: null,
+          rank: 5,
+          tier: 1,
+          games: null,
+          opggTier: null,
+          opggRank: null
+        }
+      ]
+    ])
+
+    const merged = mergeSecondaryTier(primary, secondary)
+
+    expect(merged.get(17)).toMatchObject({
+      winRate: 0.5446,
+      tier: 1,
+      rank: 12,
+      opggTier: 2,
+      opggRank: 38
+    })
+    // 主数据源没有的英雄，直接用 OP.GG 的梯度，不去重出额外一行
+    expect(merged.get(99)).toMatchObject({ tier: 1, rank: 5, opggTier: null, opggRank: null })
+  })
+})
+
 describe('toPerformanceBadge', () => {
   const lookup = (patch: Partial<ChampionPerformanceLookup> = {}): ChampionPerformanceLookup => ({
     winRate: null,
@@ -85,6 +187,8 @@ describe('toPerformanceBadge', () => {
     rank: null,
     tier: null,
     games: null,
+    opggTier: null,
+    opggRank: null,
     ...patch
   })
 

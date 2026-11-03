@@ -14,7 +14,8 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import {
   type ChampionPerformanceLookup,
   type ChampionPerformanceMode,
-  resolveChampionPerformanceMode,
+  mergeSecondaryTier,
+  resolveChampionPerformanceModeFromSession,
   toChampionPerformanceIndex
 } from './performance-index'
 
@@ -33,6 +34,8 @@ interface PerformanceLoadAttempt {
 export interface ChampionPerformanceMetadata {
   source: ChampionDataSourceId
   patch: string | null
+  /** 主要数据源之外补充的数据源，目前仅海克斯大乱斗会用到 OP.GG 的梯度 */
+  secondarySource: ChampionDataSourceId | null
 }
 
 const CACHE_TTL_MS = 15 * 60 * 1000
@@ -43,8 +46,9 @@ function cacheKey(mode: ChampionPerformanceMode, region: string) {
 }
 
 /**
- * ARAM 用 OP.GG 的模式英雄榜，胜率最完整。符文大乱斗在 OP.GG 侧只有梯度，
- * 胜率来自国服 101，因此优先 101、失败再退回 OP.GG 的梯度。
+ * 极地大乱斗用 OP.GG 的英雄榜，胜率最完整；OP.GG 没有国服数据，配置的地区
+ * 请求失败时退回全球。海克斯大乱斗在 OP.GG 侧只有梯度，胜率来自国服 101，
+ * 两者都会拉取后合并展示。
  */
 function resolveLoadAttempts(
   mode: ChampionPerformanceMode,
@@ -57,7 +61,6 @@ function resolveLoadAttempts(
     ]
   }
 
-  // OP.GG 没有国服数据，配置的地区请求失败时退回全球
   if (region === 'global') {
     return [{ mode: 'aram', region }]
   }
@@ -66,6 +69,43 @@ function resolveLoadAttempts(
     { mode: 'aram', region },
     { mode: 'aram', region: 'global' }
   ]
+}
+
+async function loadAttempt(
+  loader: ChampionDataRenderer,
+  logger: LoggerRenderer,
+  attempt: PerformanceLoadAttempt
+) {
+  let result: ChampionDataLoadResult<ChampionDataOverview>
+  try {
+    result = await loader.loadOverview({
+      mode: attempt.mode,
+      region: attempt.region,
+      tier: 'all',
+      ...(attempt.source ? { source: attempt.source } : {})
+    })
+  } catch (error) {
+    logger.warn('useChampionPerformance', 'Failed to load champion performance', error)
+    return null
+  }
+
+  if (result.status !== 'success') {
+    return null
+  }
+
+  const index = toChampionPerformanceIndex(result.data)
+  if (index.size === 0) {
+    return null
+  }
+
+  return {
+    index,
+    metadata: {
+      source: result.effectiveSource,
+      patch: result.data.metadata.patch,
+      secondarySource: null
+    } satisfies ChampionPerformanceMetadata
+  }
 }
 
 async function loadPerformanceIndex(
@@ -78,37 +118,37 @@ async function loadPerformanceIndex(
     return null
   }
 
-  const attempts = resolveLoadAttempts(mode, region)
+  if (mode === 'aram_mayhem') {
+    const [qq101Attempt, opggAttempt] = resolveLoadAttempts(mode, region)
 
-  for (const attempt of attempts) {
-    let result: ChampionDataLoadResult<ChampionDataOverview>
-    try {
-      result = await loader.loadOverview({
-        mode: attempt.mode,
-        region: attempt.region,
-        tier: 'all',
-        ...(attempt.source ? { source: attempt.source } : {})
-      })
-    } catch (error) {
-      logger.warn('useChampionPerformance', 'Failed to load champion performance', error)
-      continue
+    // 101 提供胜率，OP.GG 只提供梯度，两者并行拉取后拼在一起
+    const [primary, secondary] = await Promise.all([
+      loadAttempt(loader, logger, qq101Attempt),
+      loadAttempt(loader, logger, opggAttempt)
+    ])
+
+    if (primary && secondary) {
+      return {
+        index: mergeSecondaryTier(primary.index, secondary.index),
+        metadata: { ...primary.metadata, secondarySource: secondary.metadata.source }
+      }
     }
 
-    if (result.status !== 'success') {
-      continue
+    if (primary) {
+      return primary
     }
 
-    const index = toChampionPerformanceIndex(result.data)
-    if (index.size === 0) {
-      continue
+    if (secondary) {
+      return secondary
     }
 
-    return {
-      index,
-      metadata: {
-        source: result.effectiveSource,
-        patch: result.data.metadata.patch
-      } satisfies ChampionPerformanceMetadata
+    return null
+  }
+
+  for (const attempt of resolveLoadAttempts(mode, region)) {
+    const loaded = await loadAttempt(loader, logger, attempt)
+    if (loaded) {
+      return loaded
     }
   }
 
@@ -130,7 +170,7 @@ export function useChampionPerformance() {
   const loading = ref(false)
 
   const mode = computed(() =>
-    resolveChampionPerformanceMode(leagueClientStore.gameflow.session?.gameData.queue.gameMode)
+    resolveChampionPerformanceModeFromSession(leagueClientStore.gameflow.session)
   )
   const region = computed(() => championDataStore.settings.preferences.region || 'global')
 

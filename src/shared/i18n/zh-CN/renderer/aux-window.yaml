@@ -21,6 +21,10 @@ auxWindow:
       winRate: 胜率
       pickRate: 选取率
       rank: 排名
+      opggTier: OP.GG 梯度
+      modeAram: 极地大乱斗
+      modeMayhem: 海克斯大乱斗
+      tierOnly: OP.GG 未提供该模式胜率，仅梯度
     balanceTypes:
       damage-dealt: 造成伤害
       damage-taken: 承受伤害

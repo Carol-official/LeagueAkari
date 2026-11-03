@@ -12,6 +12,9 @@ export interface ChampionPerformanceLookup {
   rank: number | null
   tier: number | null
   games: number | null
+  /** OP.GG 的梯度与排名，海克斯大乱斗下作为补充信息与 101 的胜率并列展示 */
+  opggTier: number | null
+  opggRank: number | null
 }
 
 export type ChampionPerformanceTone = 'high' | 'low' | 'neutral' | 'tier'
@@ -59,6 +62,41 @@ export function resolveChampionPerformanceMode(
   }
 }
 
+interface GameflowSessionLike {
+  gameData?: { queue?: { gameMode?: string | null } | null } | null
+  map?: { gameMode?: string | null } | null
+}
+
+/**
+ * 选人阶段 `queue.gameMode` 与 `map.gameMode` 可能不一致 (例如海克斯大乱斗
+ * 队列复用了大乱斗的队列配置)，只要有一处表明是海克斯大乱斗，就按海克斯大乱斗处理，
+ * 避免把大乱斗的胜率错当成海克斯大乱斗的。
+ */
+export function resolveChampionPerformanceModeFromSession(
+  session: GameflowSessionLike | null | undefined
+): ChampionPerformanceMode | null {
+  if (!session) {
+    return null
+  }
+
+  const candidates = [session.gameData?.queue?.gameMode, session.map?.gameMode]
+
+  for (const candidate of candidates) {
+    if (resolveChampionPerformanceMode(candidate) === 'aram_mayhem') {
+      return 'aram_mayhem'
+    }
+  }
+
+  for (const candidate of candidates) {
+    const resolved = resolveChampionPerformanceMode(candidate)
+    if (resolved) {
+      return resolved
+    }
+  }
+
+  return null
+}
+
 function toTier(value: string | number | null): number | null {
   if (value === null) return null
   if (typeof value === 'number') {
@@ -85,8 +123,33 @@ export function toChampionPerformanceIndex(
       pickRate: item.performance.pickRate,
       rank: item.performance.rank,
       tier: toTier(item.performance.strengthTier),
-      games: item.performance.games
+      games: item.performance.games,
+      opggTier: null,
+      opggRank: null
     })
+  }
+
+  return index
+}
+
+/**
+ * 把 OP.GG 的梯度/排名并入已有查询表。海克斯大乱斗下 OP.GG 只提供梯度，
+ * 胜率来自 101，两者拼在同一行展示。
+ */
+export function mergeSecondaryTier(
+  index: Map<number, ChampionPerformanceLookup>,
+  secondary: Map<number, ChampionPerformanceLookup>
+): Map<number, ChampionPerformanceLookup> {
+  for (const [championId, item] of secondary) {
+    const existing = index.get(championId)
+    if (existing) {
+      existing.opggTier = item.tier
+      existing.opggRank = item.rank
+      continue
+    }
+
+    // 主数据源没有这个英雄时，直接把 OP.GG 的梯度当作主数据
+    index.set(championId, item)
   }
 
   return index
