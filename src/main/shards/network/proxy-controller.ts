@@ -1,4 +1,5 @@
 import type { HttpProxySetting } from '@shared/shards/network'
+import { GAME_PROXY_BYPASS_RULES } from '@shared/shards/network'
 import { formatError } from '@shared/utils/errors'
 import type { ProxyConfig } from 'electron'
 
@@ -7,11 +8,12 @@ import type { NetworkMainContext, NetworkSession } from './context'
 export function resolveNetworkProxyConfig(setting: HttpProxySetting): ProxyConfig {
   switch (setting.strategy) {
     case 'system':
-      return { mode: 'system' }
+      return { mode: 'system', proxyBypassRules: GAME_PROXY_BYPASS_RULES }
     case 'fixed-servers':
       return {
         mode: 'fixed_servers',
-        proxyRules: `${setting.host}:${setting.port}`
+        proxyRules: `${setting.host}:${setting.port}`,
+        proxyBypassRules: GAME_PROXY_BYPASS_RULES
       }
     case 'direct':
       return { mode: 'direct' }
